@@ -1,408 +1,148 @@
-# 系统架构文档
+# 小桃旅游助手架构说明
 
-## 1. 架构总览
+## 1. 项目定位
 
-本系统采用**前后端分离**的微服务架构，基于 **AI Agent** 模式设计。
+小桃旅游助手是一个面向旅行规划场景的 Agentic AI 原生应用。系统以自然语言需求为入口，结合 DashScope/Qwen、DeepSeek R1、LangChain ReAct Agent、MCP 工具协议和 ChromaDB 向量数据库，为用户生成交通、天气、住宿、行程和预算建议。
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              用户层                                         │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                        Web 浏览器                                    │   │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐              │   │
-│  │  │ 输入框   │ │ 消息列表 │ │ 控制面板 │ │ 状态面板 │              │   │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘              │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            前端展示层（Vue 3）                               │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  Vite Dev Server                                                    │   │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐              │   │
-│  │  │ ChatComposer │ ControlPanel │ MessageBubble │ StatusTimeline │   │   │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘              │   │
-│  │  ┌──────────┐ ┌──────────┐                                        │   │
-│  │  │ Pinia Store │ API Client │                                        │   │
-│  │  └──────────┘ └──────────┘                                        │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            API 网关层（FastAPI）                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  Uvicorn Server                                                     │   │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐                           │   │
-│  │  │ /api/chat │ /api/documents │ /api/tools │                           │   │
-│  │  └──────────┘ └──────────┘ └──────────┘                           │   │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐                           │   │
-│  │  │ CORS │ Pydantic │ SSE │                           │   │
-│  │  └──────────┘ └──────────┘ └──────────┘                           │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          Agent 编排层（LangChain）                           │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    AgentService（单例）                               │   │
-│  │  ┌──────────────────────────────────────────────────────────────┐  │   │
-│  │  │                    ReAct Agent                                │  │   │
-│  │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │  │   │
-│  │  │  │ 预分析    │ │ 工具选择  │ │ 执行循环  │ │ 结果合成  │       │  │   │
-│  │  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │  │   │
-│  │  └──────────────────────────────────────────────────────────────┘  │   │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐                           │   │
-│  │  │ Memory │ Prompt │ Callbacks │                           │   │
-│  │  └──────────┘ └──────────┘ └──────────┘                           │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            工具层（MCP + RAG）                               │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    ToolRegistry（工具注册表）                          │   │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐              │   │
-│  │  │ train_query │ gaode_weather │ gaode_hotel │ gaode_poi │              │   │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘              │   │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐              │   │
-│  │  │ gaode_geo │ gaode_driving │ lucky_day │ flight_query │              │   │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘              │   │
-│  │  ┌──────────┐ ┌──────────┐                                        │   │
-│  │  │ rag_search │ r1_analysis │                                        │   │
-│  │  └──────────┘ └──────────┘                                        │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              数据层                                          │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐              │   │
-│  │  │ ChromaDB │ │ 12306 API │ │ 高德 API │ │ DeepSeek │              │   │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘              │   │
-│  │  ┌──────────┐ ┌──────────┐                                        │   │
-│  │  │ DashScope │ │ 航班 API │                                        │   │
-│  │  └──────────┘ └──────────┘                                        │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────┘
+项目方向为 **方向一：Agentic AI 原生开发**。系统重点不是单次大模型问答，而是通过 Agent 编排多个外部工具与本地知识库，形成可部署、可观测、可扩展的工程闭环。
+
+## 2. 总体架构
+
+```mermaid
+flowchart TD
+    User[用户浏览器] --> Frontend[Vue 3 前端]
+    Frontend -->|HTTP / SSE| API[FastAPI 后端]
+    API --> Agent[LangChain ReAct Agent]
+    Agent --> Qwen[DashScope Qwen]
+    Agent --> R1[DeepSeek R1]
+    Agent --> MCP[MCP Tool Manager]
+    Agent --> RAG[Agentic RAG]
+    MCP --> Train[12306 Server]
+    MCP --> Gaode[Gaode Server]
+    MCP --> Flight[flight Server]
+    MCP --> Calendar[bazi Server]
+    MCP --> Search[biying Server]
+    RAG --> Chroma[ChromaDB]
+    API -->|text/event-stream| Frontend
 ```
 
----
+系统采用分层设计：
 
-## 2. 分层职责说明
-
-### 2.1 前端展示层
-**技术栈**：Vue 3 + Vite + TypeScript + Pinia
-
-| 组件 | 职责 |
-|------|------|
-| ChatComposer | 消息输入框，发送用户消息 |
-| ControlPanel | 控制面板，配置参数、上传文档 |
-| MessageBubble | 消息气泡，渲染 Markdown 对话内容 |
-| StatusTimeline | 状态时间线，展示 Agent 运行状态 |
-| Pinia Store | 全局状态管理 |
-| API Client | HTTP 请求客户端 |
-
-### 2.2 API 网关层
-**技术栈**：FastAPI + Pydantic + Uvicorn
-
-| 端点 | 方法 | 职责 |
+| 层次 | 技术 | 职责 |
 |------|------|------|
-| /api/health | GET | 健康检查 |
-| /api/tools | GET | 工具状态查询 |
-| /api/documents/upload | POST | 文档上传 |
-| /api/chat | POST | 聊天（同步） |
-| /api/chat/stream | POST | 聊天（SSE 流式） |
+| 前端层 | Vue 3, Vite, TypeScript, Pinia | 对话、文档上传、状态时间线、工具状态展示 |
+| API 层 | FastAPI, Pydantic, SSE | 健康检查、聊天、文档上传、流式响应 |
+| Agent 层 | LangChain ReAct Agent | 需求预分析、工具选择、多步骤推理、答案合成 |
+| 工具层 | MCP, LangChain Tool | 火车票、高德地图、天气、酒店、航班、黄历、搜索 |
+| RAG 层 | ChromaDB, Retriever | 攻略文档索引、向量检索、知识增强 |
+| 部署层 | Docker, Nginx, Docker Compose | 前端托管、API 反向代理、云服务器部署 |
 
-### 2.3 Agent 编排层
-**技术栈**：LangChain + ReAct Agent
+## 3. 前端设计
 
-- **AgentService**：核心服务单例，管理 Agent 生命周期
-- **预分析**：提取用户意图（目的地、出发地、时间、预算）
-- **工具选择**：根据场景选择合适工具（RAG/MCP/R1）
-- **执行循环**：ReAct 循环（Thought → Action → Observation）
-- **结果合成**：将各工具结果合成为完整旅行方案
+前端位于 `src/frontend`，采用“旅行任务舱”风格界面。
 
-### 2.4 工具层
-**技术栈**：MCP 协议 + LangChain Tools
+- `TravelDesk.vue`：主工作台，组织聊天区、侧边控制面板和状态区。
+- `ChatComposer.vue`：输入用户旅行需求。
+- `MessageBubble.vue`：展示用户消息与 Agent 回答。
+- `StatusTimeline.vue`：展示 Agent 执行事件，例如需求分析、R1 推理、工具查询、方案完成。
+- `ControlPanel.vue`：提供攻略文档上传、最大迭代次数配置、工具状态和 RAG 文档统计。
+- `api/client.ts`：封装 `/api` 请求与 SSE 流式聊天。
 
-| 类型 | 工具 | 说明 |
-|------|------|------|
-| MCP | 12306 火车票查询 | 查询车次、票价、余票 |
-| MCP | 高德地图天气 | 查询天气预报 |
-| MCP | 高德地图酒店 | 搜索酒店/民宿 |
-| MCP | 高德地图 POI | 搜索景点/餐厅 |
-| MCP | 高德地图路线 | 驾车/公交路线规划 |
-| MCP | 航班查询 | 查询航班信息 |
-| MCP | 八字黄历 | 查询黄历吉日 |
-| RAG | 知识库检索 | 检索旅游攻略 |
-| R1 | 深度分析 | 复杂路线优化 |
+前端在生产环境中不直接访问后端容器地址，而是统一请求 `/api`，由 Nginx 反向代理到 FastAPI。
 
-### 2.5 数据层
-| 数据源 | 类型 | 用途 |
-|--------|------|------|
-| ChromaDB | 向量数据库 | 存储旅游攻略向量 |
-| DashScope API | LLM | Qwen 模型推理 |
-| DeepSeek API | LLM | R1 深度推理 |
-| MCP 服务器 | 外部服务 | 交通、天气、住宿等数据 |
+## 4. 后端 API
 
----
+后端位于 `src/backend`，基于 FastAPI 提供接口：
 
-## 3. 核心组件设计
+| API | 方法 | 功能 |
+|-----|------|------|
+| `/api/health` | GET | 健康检查 |
+| `/api/tools` | GET | 返回工具列表、MCP 状态、RAG 文档数量 |
+| `/api/documents/upload` | POST | 上传 TXT、MD、PDF、CSV 攻略文档并构建向量索引 |
+| `/api/chat` | POST | 同步聊天接口 |
+| `/api/chat/stream` | POST | SSE 流式聊天接口 |
 
-### 3.1 AgentService（核心服务）
-**位置**：`src/backend/services/agent_service.py`
+`/api/chat/stream` 是主要交互入口。后端会将 Agent 执行过程拆分为 `status`、`analysis`、`final` 和 `error` 事件，前端实时展示。
 
-```python
-class AgentService:
-    def pre_analyze_query(user_query: str) -> dict
-        # 预分析用户查询，提取结构化信息
-    def create_tools() -> List[Tool]
-        # 创建工具列表（RAG + MCP + R1）
-    def run_chat(message, messages, max_iterations, status_callback) -> dict
-        # 执行完整的聊天流程
-    def _build_prompt() -> PromptTemplate
-        # 构建 ReAct Agent 提示词
+## 5. Agent 编排流程
+
+`AgentService` 是系统核心服务，主要流程如下：
+
+```mermaid
+flowchart LR
+    Input[用户需求] --> Pre[Qwen 预分析]
+    Pre --> Type[场景判断]
+    Type --> Tools[创建工具列表]
+    Type --> R1[复杂场景调用 R1]
+    Tools --> React[ReAct Agent]
+    R1 --> React
+    React --> MCP[MCP 工具调用]
+    React --> Rag[RAG 检索]
+    MCP --> Answer[方案合成]
+    Rag --> Answer
+    Answer --> SSE[SSE 返回前端]
 ```
 
-### 3.2 MCPToolManager（MCP 管理器）
-**位置**：`src/aggentic_RAG/travel_agent/tools/mcp_tools.py`
+系统会先提取目的地、出发地、预算、天数、日期和偏好，然后判断是否属于复杂约束或多目的地场景。复杂场景会优先调用 DeepSeek R1 进行深度分析，随后继续执行交通、天气、住宿、黄历、航班和攻略检索。
 
-- 管理 MCP 服务器连接（SSE 连接）
-- 自动重试机制（指数退避）
-- SSL 证书验证绕过与代理配置
+## 6. MCP 工具设计
 
-### 3.3 TravelRAG（RAG 检索）
-**位置**：`src/aggentic_RAG/travel_agent/tools/rag_tool.py`
+工具注册由 `src/aggentic_RAG/travel_agent/tools/tool_registry.py` 统一维护。
 
-- 支持多格式文档（TXT/MD/PDF/CSV）
-- 文档分割 → Embedding 向量化 → ChromaDB 存储
-- 相似度检索，批量处理（batch_size=10）
+| 工具 | MCP Server | 远端工具 | 作用 |
+|------|------------|----------|------|
+| `train_query` | `12306 Server` | `get-tickets` | 查询火车票并结合自驾路线对比 |
+| `gaode_weather` | `Gaode Server` | `maps_weather` | 查询天气 |
+| `gaode_hotel_search` | `Gaode Server` | `maps_text_search` | 搜索酒店和民宿 |
+| `gaode_poi_search` | `Gaode Server` | `maps_text_search` | 搜索景点、餐厅和 POI |
+| `gaode_driving` | `Gaode Server` | `maps_direction_driving` | 查询驾车路线 |
+| `flight_query` | `flight Server` | `search_flight` | 查询国内航班 |
+| `lucky_day` | `bazi Server` | `getChineseCalendar` | 查询黄历宜忌 |
+| `rag_search` | 本地 ChromaDB | Retriever | 检索攻略文档 |
 
-### 3.4 DeepSeekR1Analyzer（R1 分析器）
-**位置**：`src/aggentic_RAG/travel_agent/tools/r1_tool.py`
+系统对远端工具异常进行了兜底处理。例如：
 
-- 复杂问题深度分析与路线优化
-- 低温度（0.1）确保输出稳定
-- JSON 结构化输出
+- 航班工具根据真实 MCP schema 修正为 `search_flight`。
+- 黄历服务超时时返回可读提示。
+- 12306 远端异常时提示可能为日期超出查询范围或服务暂不可用。
 
----
+## 7. RAG 数据流
 
-## 4. Agent 交互流程
-
-### 4.1 ReAct Agent 执行循环
-```
-接收用户输入
-    │
-    ▼
-预分析阶段（Qwen LLM 提取意图）
-    │
-    ▼
-场景判断（简单 / 复杂 / 多目的地）
-    │
-    ▼
-构建 Prompt + 初始化 Agent
-    │
-    ▼
-┌─── ReAct 循环 ──────────────────────────────┐
-│                                              │
-│  Thought（思考下一步）                        │
-│      │                                       │
-│      ├─→ 未完成 → Action（选择工具）         │
-│      │              │                        │
-│      │              ▼                        │
-│      │         调用工具                      │
-│      │              │                        │
-│      │              ▼                        │
-│      │         Observation（获取结果）        │
-│      │              │                        │
-│      │              ▼                        │
-│      │         更新记忆 → 返回 Thought       │
-│      │                                       │
-│      └─→ 完成 → 生成最终答案 → 返回结果      │
-└──────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    Upload[上传攻略文档] --> Loader[文档加载]
+    Loader --> Split[文本切分]
+    Split --> Embed[DashScope Embedding]
+    Embed --> Chroma[ChromaDB 持久化]
+    Query[用户问题] --> Retriever[Retriever 检索]
+    Chroma --> Retriever
+    Retriever --> Agent[注入 Agent 上下文]
 ```
 
----
+RAG 支持 TXT、MD、PDF、CSV 等格式。用户上传攻略后，系统将文档转为向量并持久化到 ChromaDB。Agent 可通过 `rag_search` 查询本地攻略内容，用于增强景点、美食、游玩时间等回答。
 
-## 5. RAG 检索流程
+## 8. Docker 与云端部署
 
-### 5.1 文档索引
-```
-原始文档（TXT/MD/PDF/CSV）
-    │
-    ▼
-LangChain DocumentLoader 加载
-    │
-    ▼
-RecursiveCharacterTextSplitter 分割
-    │
-    ▼
-DashScope text-embedding-v4 向量化
-    │
-    ▼
-ChromaDB 存储（本地文件持久化）
-```
+Docker 部署包含两个主要服务：
 
-### 5.2 检索流程
-```
-用户查询
-    │
-    ▼
-Query Embedding（DashScope）
-    │
-    ▼
-ChromaDB 相似度检索（Top-K）
-    │
-    ▼
-返回相关文档片段
-    │
-    ▼
-注入 Agent Context
-```
+| 服务 | 镜像/容器 | 职责 |
+|------|-----------|------|
+| frontend | Nginx + Vue dist | 托管前端静态文件，反向代理 `/api` |
+| backend | Python + Uvicorn | 运行 FastAPI、Agent、MCP、RAG |
 
----
+生产环境中：
 
-## 6. MCP 工具调用流程
+- 前端暴露 `80` 端口。
+- 后端绑定 `127.0.0.1:8000`，不直接暴露公网。
+- Nginx 将 `/api` 请求代理到 `backend:8000`。
+- ChromaDB 数据使用 Docker volume 持久化。
 
-```
-Agent 发起工具调用
-    │
-    ▼
-ToolRegistry 查找工具定义
-    │
-    ▼
-MCPToolManager 建立 SSE 连接
-    │
-    ▼
-发送 JSON-RPC 请求
-    │
-    ▼
-MCP Server 处理（12306/高德/航班/黄历/必应）
-    │
-    ▼
-SSE 流式返回结果
-    │
-    ▼
-解析响应 → 返回给 Agent
-```
+云端访问地址：`http://175.178.129.222`。
 
-### MCP 服务器列表
+## 9. 扩展方向
 
-| 服务器 | 用途 | 工具 |
-|--------|------|------|
-| 12306 Server | 火车票查询 | get-tickets, get-stations-code-in-city |
-| Gaode Server | 地图服务 | maps_weather, maps_text_search, maps_geo, maps_direction_driving |
-| flight Server | 航班查询 | searchFlightsByDepArr |
-| bazi Server | 黄历查询 | getChineseCalendar |
-| biying Server | 必应搜索 | bing_web_search |
-
----
-
-## 7. 数据流设计
-
-### 7.1 用户请求处理流程
-```
-用户输入 → 前端序列化 → HTTP POST /api/chat/stream
-    │
-    ▼
-FastAPI 路由 → Pydantic 验证
-    │
-    ▼
-AgentService.run_chat()
-    │
-    ├─→ 预分析（Qwen）→ 提取结构化信息
-    │
-    ▼
-工具选择与调用
-    ├─→ RAG 检索（ChromaDB）
-    ├─→ MCP 调用（12306/高德/航班/黄历）
-    └─→ R1 分析（DeepSeek）
-            │
-            ▼
-    结果合成（Qwen）→ SSE 事件流 → 前端实时更新
-```
-
-### 7.2 SSE 流式响应
-```
-客户端请求 /api/chat/stream
-    │
-    ▼
-创建 asyncio.Queue → 启动 Agent 线程
-    │
-    ├─→ 推送 status 事件（工具调用状态）
-    ├─→ 推送 analysis 事件（预分析结果）
-    ├─→ 推送 final 事件（最终方案）
-    └─→ 推送 done 事件（完成标记）
-            │
-            ▼
-    客户端实时接收并渲染
-```
-
----
-
-## 8. 技术栈映射
-
-| 层次 | 技术 | 说明 |
-|------|------|------|
-| 前端层 | Vue 3 + Vite | 响应式 UI 框架 |
-| 前端层 | TypeScript | 类型安全 |
-| 前端层 | Pinia | 状态管理 |
-| 前端层 | Axios | HTTP 客户端 |
-| API 层 | FastAPI | 异步 Web 框架 |
-| API 层 | Pydantic | 数据验证 |
-| API 层 | Uvicorn | ASGI 服务器 |
-| Agent 层 | LangChain | Agent 框架 |
-| Agent 层 | ReAct | 推理与行动模式 |
-| 工具层 | MCP | 工具调用协议 |
-| 工具层 | ChromaDB | 向量数据库 |
-| 数据层 | DashScope | Qwen 模型 |
-| 数据层 | DeepSeek | R1 模型 |
-| 数据层 | 高德 API | 地图服务 |
-| 数据层 | 12306 | 火车票服务 |
-
----
-
-## 9. 部署架构
-
-### 开发环境
-```
-本地开发机器
-├── 前端（Vite Dev Server）:5173
-├── 后端（Uvicorn）:8000
-├── ChromaDB（本地文件）
-└── MCP 服务器（远程）
-```
-
-### 生产环境（Docker）
-```
-Docker Compose
-├── frontend（Nginx）:80
-├── backend（Uvicorn）:8000
-├── chromadb（独立容器）:8001
-└── MCP 服务器（远程）
-```
-
----
-
-## 10. 扩展性设计
-
-### 新增 MCP 服务器
-1. 在 `servers_config.json` 中添加服务器配置
-2. 在 `tool_registry.py` 中注册工具定义
-3. 在 `agent_service.py` 中添加工具处理逻辑
-4. 无需修改核心 Agent 逻辑
-
-### 新增 LLM 模型
-1. 在 `settings.py` 中添加模型配置
-2. 在 `agent_service.py` 中初始化模型客户端
-3. 修改 `get_llm()` 方法返回新模型
-
-### 新增 RAG 数据源
-1. 上传新文档到 `data/travel_docs/`
-2. 调用 `build_knowledge_base()` 重建索引
-3. 或通过 API 动态上传文档
+- 接入 HTTPS、域名和 CI/CD 自动部署。
+- 增加 LangSmith 或自建 Tracing，记录 Agent 调用链路。
+- 构建 Benchmark 测试集，统计工具调用成功率、平均响应时间和人工评分。
+- 引入多智能体协作，将交通、住宿、天气、预算拆分为专职 Agent。
+- 增加长期记忆，记录用户常用出发地、预算偏好和住宿偏好。
