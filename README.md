@@ -45,6 +45,81 @@ cs599-project/
 └── LICENSE
 ```
 
+## 运行前准备
+
+本项目依赖外部大模型 API 和 MCP 服务。首次运行前需要准备以下配置：
+
+| 配置项 | 来源/平台 | 用途 | 是否必填 |
+|--------|-----------|------|----------|
+| `DEEPSEEK_API_KEY` | DeepSeek 开放平台 | 调用 DeepSeek R1，用于复杂路线推理与优化 | 必填 |
+| `DASHSCOPE_API_KEY` | 阿里云 DashScope / 百炼 | 调用 Qwen 对话模型和 `text-embedding-v4` 嵌入模型 | 必填 |
+| `LANGCHAIN_API_KEY` | LangSmith | 调试链路追踪，仅在启用 `LANGCHAIN_TRACING_V2=true` 时使用 | 可选 |
+| `servers_config.json` | MCP 服务配置 | 配置火车票、高德地图、黄历、航班等工具服务 | 必填 |
+
+API Key 获取入口：
+
+- DeepSeek: `https://platform.deepseek.com/`
+- DashScope / 阿里云百炼: `https://dashscope.aliyun.com/`
+- LangSmith: `https://smith.langchain.com/`
+
+### 环境变量
+
+复制环境变量模板：
+
+```bash
+cp src/aggentic_RAG/.env.example src/aggentic_RAG/.env
+```
+
+编辑 `src/aggentic_RAG/.env`：
+
+```bash
+DEEPSEEK_API_KEY=sk-your-deepseek-api-key
+DASHSCOPE_API_KEY=sk-your-dashscope-api-key
+LANGCHAIN_TRACING_V2=false
+MCP_CONFIG_PATH=travel_agent/config/servers_config.json
+CHROMA_PERSIST_DIR=./data/travel_vectordb
+```
+
+`.env` 包含敏感密钥，已经被 `.gitignore` 和 `.dockerignore` 忽略，不要提交到 GitHub，也不要打进 Docker 镜像。
+
+### MCP 服务器配置
+
+复制 MCP 配置模板：
+
+```bash
+cp src/aggentic_RAG/travel_agent/config/servers_config.json.example \
+   src/aggentic_RAG/travel_agent/config/servers_config.json
+```
+
+然后把里面的占位 URL 替换为真实的 MCP SSE 地址。项目当前会使用这些服务器名称，名称需要保持一致：
+
+| MCP 服务器名称 | 用途 | 主要工具 | 是否建议配置 |
+|----------------|------|----------|--------------|
+| `12306 Server` | 火车票、车站码、车次路线查询 | `get-tickets`, `get-stations-code-in-city` | 必需 |
+| `Gaode Server` | 高德地图 POI、酒店、天气、地理编码、驾车路线 | `maps_text_search`, `maps_weather`, `maps_geo`, `maps_direction_driving` | 必需 |
+| `bazi Server` | 黄历、农历、宜忌信息 | `getChineseCalendar` | 建议配置 |
+| `flight Server` | 国内航班价格与时刻表 | `search_flight` | 建议配置 |
+| `biying Server` | 搜索最新旅游资讯 | `bing_search`, `crawl_webpage` | 可选 |
+
+示例结构：
+
+```json
+{
+  "mcp_servers": [
+    {
+      "name": "12306 Server",
+      "url": "https://your-12306-mcp-server-url/sse"
+    },
+    {
+      "name": "Gaode Server",
+      "url": "https://your-gaode-mcp-server-url/sse"
+    }
+  ]
+}
+```
+
+`servers_config.json` 可能包含真实服务地址，默认也不会提交到 GitHub。仓库只保留 `servers_config.json.example` 模板。
+
 ## 快速开始
 
 ### 1. 安装依赖
@@ -57,25 +132,15 @@ pip install -r src/aggentic_RAG/requirements.txt
 cd src/frontend && npm install
 ```
 
-### 2. 配置环境变量
+### 2. 配置环境变量和 MCP
 
 ```bash
 cp src/aggentic_RAG/.env.example src/aggentic_RAG/.env
-```
-
-编辑 `src/aggentic_RAG/.env`，填入 API Key：
-
-```bash
-DEEPSEEK_API_KEY=sk-your-deepseek-key
-DASHSCOPE_API_KEY=sk-your-dashscope-key
-```
-
-MCP 服务端配置：
-
-```bash
 cp src/aggentic_RAG/travel_agent/config/servers_config.json.example \
    src/aggentic_RAG/travel_agent/config/servers_config.json
 ```
+
+然后按照“运行前准备”填写 API Key 和 MCP SSE 地址。
 
 ### 3. 启动
 
