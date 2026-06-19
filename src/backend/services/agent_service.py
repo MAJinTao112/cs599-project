@@ -314,6 +314,8 @@ User query: {user_query}
                         toStation=destination,
                         date=date,
                     )
+                if isinstance(train_result, str) and "Cannot read properties of undefined" in train_result:
+                    train_result = "火车票查询暂不可用：12306 远端工具未返回有效结果，可能是日期超出可查询范围或远端服务异常。"
 
                 driving_result = None
                 try:
@@ -359,10 +361,12 @@ User query: {user_query}
                         try:
                             kwargs = json.loads(tool_input) if tool_input.strip().startswith("{") else {"query": tool_input.strip()}
                             kwargs = self._normalize_tool_kwargs(tool_name, kwargs)
-                            return self.call_mcp_tool_sync(server_name, mcp_tool_name, **kwargs)
+                            result = self.call_mcp_tool_sync(server_name, mcp_tool_name, **kwargs)
+                            return self._friendly_tool_result(tool_name, result)
                         except json.JSONDecodeError:
                             kwargs = self._normalize_tool_kwargs(tool_name, {"query": tool_input.strip()})
-                            return self.call_mcp_tool_sync(server_name, mcp_tool_name, **kwargs)
+                            result = self.call_mcp_tool_sync(server_name, mcp_tool_name, **kwargs)
+                            return self._friendly_tool_result(tool_name, result)
                         except Exception as exc:
                             return f"工具调用失败: {exc}"
 
@@ -404,9 +408,11 @@ User query: {user_query}
             return {"solarDatetime": f"{str(date_val).strip()}T12:00:00+08:00"}
         if tool_name == "flight_query":
             return {
-                "dep": kwargs.pop("dep", None) or kwargs.pop("from", None) or kwargs.pop("origin", ""),
-                "arr": kwargs.pop("arr", None) or kwargs.pop("to", None) or kwargs.pop("destination", ""),
-                "date": kwargs.pop("date", ""),
+                "origin": kwargs.pop("origin", None) or kwargs.pop("dep", None) or kwargs.pop("from", ""),
+                "destination": kwargs.pop("destination", None) or kwargs.pop("arr", None) or kwargs.pop("to", ""),
+                "dep_date": kwargs.pop("dep_date", None) or kwargs.pop("date", ""),
+                "seat_class": kwargs.pop("seat_class", "economy"),
+                "sort_type": kwargs.pop("sort_type", "2"),
             }
         if tool_name == "gaode_weather":
             city = kwargs.pop("city", None) or kwargs.pop("location", None) or kwargs.pop("query", "")
@@ -429,6 +435,15 @@ User query: {user_query}
                 "destination": kwargs.pop("destination", None) or kwargs.pop("to", ""),
             }
         return kwargs
+
+    def _friendly_tool_result(self, tool_name: str, result: str) -> str:
+        result_text = str(result)
+        lower_result = result_text.lower()
+        if "unknown tool" in lower_result:
+            return f"{tool_name} 暂不可用：远端 MCP 服务未暴露匹配的工具。"
+        if tool_name == "lucky_day" and ("timed out" in lower_result or '"error"' in lower_result):
+            return "黄历查询暂不可用：远端黄历服务响应超时，可先按常规日期规划行程。"
+        return result_text
 
     def _clean_city(self, value: Any) -> str:
         city = str(value or "").strip()
