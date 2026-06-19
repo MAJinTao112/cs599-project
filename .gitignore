@@ -189,5 +189,8 @@ node_modules/
 # ChromaDB data
 src/aggentic_RAG/data/travel_vectordb/
 
+# Docker image archives
+*.tar
+
 # MCP server config (may contain real URLs)
 src/aggentic_RAG/travel_agent/config/servers_config.json

@@ -33,6 +33,8 @@ const api = axios.create({
   timeout: 30000
 });
 
+const apiBase = import.meta.env.VITE_API_BASE || "/api";
+
 export async function getTools(): Promise<ToolStatus> {
   const { data } = await api.get<ToolStatus>("/tools");
   return data;
@@ -48,7 +50,7 @@ export async function uploadDocuments(files: FileList): Promise<{ uploaded: numb
 }
 
 export async function streamChat(request: ChatRequest, handlers: StreamHandlers): Promise<void> {
-  const response = await fetch("/api/chat/stream", {
+  const response = await fetch(`${apiBase}/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request)

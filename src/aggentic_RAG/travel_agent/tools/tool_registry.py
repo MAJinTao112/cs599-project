@@ -213,7 +213,7 @@ AVAILABLE_TOOLS: List[ToolDefinition] = [
         },
         tool_type="mcp",
         server_name="flight Server",
-        mcp_tool_name="searchFlightsByDepArr"
+        mcp_tool_name="search_flight"
     ),
     
     # ========== DeepSeek R1 工具 ==========
@@ -283,4 +283,3 @@ def get_tools_description_for_llm() -> str:
         descriptions.append(desc)
     
     return "\n\n".join(descriptions)
-

@@ -95,6 +95,47 @@ cd src/frontend && npm run dev
 curl http://127.0.0.1:8000/api/health
 ```
 
+## Docker 部署
+
+### 本地 Docker 运行
+
+```bash
+docker compose up -d --build
+```
+
+访问：
+
+- 前端：`http://localhost:8080`
+- 后端健康检查：`http://localhost:8000/api/health`
+
+### 云服务器部署
+
+本地构建并打包 amd64 镜像：
+
+```bash
+chmod +x build-images.sh deploy.sh
+./build-images.sh
+```
+
+上传到服务器：
+
+```bash
+SERVER_IP=你的服务器IP
+ssh root@$SERVER_IP "mkdir -p /opt/cs599"
+scp cs599-backend.tar cs599-frontend.tar docker-compose.prod.yml deploy.sh root@$SERVER_IP:/opt/cs599/
+scp src/aggentic_RAG/travel_agent/config/servers_config.json root@$SERVER_IP:/opt/cs599/
+```
+
+服务器启动：
+
+```bash
+cd /opt/cs599
+chmod +x deploy.sh
+./deploy.sh
+```
+
+生产环境只需要开放 `80/tcp`；后端 `8000` 默认只绑定服务器本机，由 nginx 反向代理 `/api`。
+
 ## 系统架构
 
 详见 [docs/architecture.md](docs/architecture.md)
